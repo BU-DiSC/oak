@@ -9,14 +9,14 @@ import datetime
 import duckdb
 import pandas as pd
 import time
-
+import itertools
 from tqdm.auto import tqdm
 
 
 # In[2]:
 
 
-con = duckdb.connect(database="tpch_sf100.db")
+con = duckdb.connect(database="/root/venv/tpch_sf100.db")
 
 # con.execute("INSTALL tpch; LOAD tpch")
 # for idx in tqdm(range(10)):
@@ -94,11 +94,12 @@ min_shipdate = con.sql("SELECT MIN(l_shipdate) FROM lineitem").fetchone()[0]
 max_shipdate = con.sql("SELECT MAX(l_shipdate) FROM lineitem").fetchone()[0]
 
 table = []
+NUM_TRIALS = 3
 for orderdate in tqdm(list(daterange(min_orderdate, max_orderdate, 30)), ncols=80):
     for shipdate in tqdm(list(daterange(min_shipdate, max_shipdate, 30)), leave=False, ncols=80):
         params = {"orderdate": orderdate, "shipdate": shipdate}
         elapsed_times = []
-        for trial in range(3):
+        for trial in range(NUM_TRIALS):
             start = time.time()
             res = con.sql(query_template, params=params)
             elapsed = time.time() - start
@@ -112,3 +113,40 @@ for orderdate in tqdm(list(daterange(min_orderdate, max_orderdate, 30)), ncols=8
 
 table = pd.DataFrame(table)
 table.to_csv("tpch_q3_sweep.csv")
+
+
+value_orders={}
+value_orders['orderdate']=list(daterange(min_orderdate, max_orderdate, 30))
+value_orders['shipdate']=list(daterange(min_shipdate, max_shipdate, 30))
+table_initial = table.iloc[:, :-3]  # All columns except the last three
+
+def are_adjacent(value1, value2, order):
+    return abs(order.index(value1) - order.index(value2)) == 1
+
+def are_neighbors(row1, row2):
+    return all(are_adjacent(a, b, value_orders[col]) for a, b, col in zip(row1, row2, table_initial.columns))
+
+# Find all pairs of neighbor rows
+neighbor_pairs = []
+
+# Compare each pair of rows
+for i, j in itertools.combinations(range(len(table_initial)), 2):
+    if are_neighbors(table_initial.iloc[i], table_initial.iloc[j]):
+        neighbor_pairs.append((i, j))
+
+table['mean_elapsed'] = 0
+for trial in range(NUM_TRIALS):
+    table['mean_elapsed'] += table[f"elapsed_{trial}"]
+table['mean_elapsed'] = table['mean_elapsed']/NUM_TRIALS
+
+deviation_log = []
+for i, (row1_idx, row2_idx) in enumerate(neighbor_pairs):
+    # Extract values from the DataFrame
+    value1 = table.loc[row1_idx, 'mean_elapsed']
+    value2 = table.loc[row2_idx, 'mean_elapsed']
+    deviation = max(value1 / value2, value2 / value1)
+    
+    # Store the deviation value
+    deviation_log.append([row1_idx, row2_idx, deviation])
+    
+print(deviation_log)
