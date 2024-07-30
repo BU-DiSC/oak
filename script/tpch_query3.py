@@ -95,8 +95,15 @@ max_shipdate = con.sql("SELECT MAX(l_shipdate) FROM lineitem").fetchone()[0]
 
 table = []
 NUM_TRIALS = 3
-for orderdate in tqdm(list(daterange(min_orderdate, max_orderdate, 30)), ncols=80):
-    for shipdate in tqdm(list(daterange(min_shipdate, max_shipdate, 30)), leave=False, ncols=80):
+orderdate_skipby = 30
+shipdate_skipby = 30
+
+value_orders={}
+value_orders['orderdate']=list(daterange(min_orderdate, max_orderdate, orderdate_skipby))
+value_orders['shipdate']=list(daterange(min_shipdate, max_shipdate, shipdate_skipby))
+
+for orderdate in tqdm(value_orders['orderdate'], ncols=80):
+    for shipdate in tqdm(value_orders['shipdate'], leave=False, ncols=80):
         params = {"orderdate": orderdate, "shipdate": shipdate}
         elapsed_times = []
         for trial in range(NUM_TRIALS):
@@ -114,10 +121,6 @@ for orderdate in tqdm(list(daterange(min_orderdate, max_orderdate, 30)), ncols=8
 table = pd.DataFrame(table)
 table.to_csv("tpch_q3_sweep.csv")
 
-
-value_orders={}
-value_orders['orderdate']=list(daterange(min_orderdate, max_orderdate, 30))
-value_orders['shipdate']=list(daterange(min_shipdate, max_shipdate, 30))
 table_initial = table.iloc[:, :-3]  # All columns except the last three
 
 def are_adjacent(value1, value2, order):
@@ -150,3 +153,34 @@ for i, (row1_idx, row2_idx) in enumerate(neighbor_pairs):
     deviation_log.append([row1_idx, row2_idx, deviation])
     
 print(deviation_log)
+
+
+qt_orderdate = """
+    SELECT count(*)
+    FROM
+        orders
+    WHERE
+        o_orderdate < $orderdate
+        ;
+"""
+qt_shipdate = """
+    SELECT count(*)
+    FROM
+        lineitem
+    WHERE
+        l_shipdate > $shipdate
+   ;
+"""
+sel_orderdate={}
+sel_shipdate={}
+for orderdate in tqdm(value_orders['orderdate'], ncols=80):
+    sel_orderdate[orderdate] = con.sql(qt_orderdate, params={"orderdate": orderdate}).fetchone()[0]
+
+for shipdate in tqdm(value_orders['shipdate'], leave=False, ncols=80):
+    sel_shipdate[shipdate] = con.sql(qt_shipdate, params={"shipdate": shipdate}).fetchone()[0]
+    
+orders_card = con.sql("SELECT count(*) FROM orders").fetchone()[0]
+lineitem_card = con.sql("SELECT count(*) FROM lineitem").fetchone()[0]
+
+print('sel_shipdate:', {x: y/lineitem_card for x,y in sel_shipdate.items()})
+print('sel_orderdate', {x: y/orders_card for x,y in sel_orderdate.items()})
