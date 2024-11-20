@@ -9,7 +9,7 @@ from tqdm.auto import tqdm
 con = duckdb.connect(database="tpch_sf100.db")
 con.execute("SET enable_progress_bar = false")
 
-#6D version
+# 6D version
 # query_template = """select
 #   sum(l_extendedprice* (1 - l_discount)) as revenue
 # from
@@ -46,7 +46,7 @@ con.execute("SET enable_progress_bar = false")
 #       and l_shipinstruct = 'DELIVER IN PERSON'
 #   );"""
 
-#3D version
+# 3D version
 query_template = """
 SELECT
     sum(l_extendedprice* (1 - l_discount)) as revenue
@@ -92,22 +92,33 @@ max_quantity = float(con.sql("SELECT MAX(l_quantity) FROM lineitem").fetchone()[
 table = []
 NUM_TRIALS = 3
 
-for quantity1 in tqdm(list(np.arange(min_quantity, max_quantity + 1.00, 1.00))):
-    for quantity2 in tqdm(list(np.arange(min_quantity, max_quantity + 1.00, 1.00)), leave=False):
-        for quantity3 in tqdm(list(np.arange(min_quantity, max_quantity + 1.00, 1.00)), leave=False):
-            params = {'quantity1': quantity1, 'quantity2': quantity2, 'quantity3': quantity3}
+for quantity1 in tqdm(
+    list(np.arange(min_quantity, max_quantity + 1.00, 1.00)), ncols=80
+):
+    for quantity2 in tqdm(
+        list(np.arange(min_quantity, max_quantity + 1.00, 1.00)), leave=False, ncols=80
+    ):
+        for quantity3 in tqdm(
+            list(np.arange(min_quantity, max_quantity + 1.00, 1.00)),
+            leave=False,
+            ncols=80,
+        ):
+            params = {
+                "quantity1": quantity1,
+                "quantity2": quantity2,
+                "quantity3": quantity3,
+            }
             row = dict()
             for trial in range(NUM_TRIALS):
                 start = time.time()
                 res = con.sql(query_template, params=params)
                 elapsed = time.time() - start
-                row[f'elapsed_{trial}'] = elapsed
+                row[f"elapsed_{trial}"] = elapsed
                 # If we want to, save the result for a sanity check
                 # row[f'res_{trial}'] = res.fetchall()
             table.append({**params, **row})
 
 table = pd.DataFrame(table)
-table.to_csv('tpch_q19_sweep.csv')
+table.to_csv("tpch_q19_sweep.csv")
 
 con.close()
-

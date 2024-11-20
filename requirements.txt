@@ -1,5 +1,5 @@
 duckdb
 jupyter
 matplotlib
-pandas
+polars
 tqdm

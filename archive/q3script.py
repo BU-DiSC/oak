@@ -1,22 +1,13 @@
 #!/usr/bin/env python
-# coding: utf-8
-
-# # Generating DB
-#
 # To make our lives easier, we'll use [DuckDBs TPCH extension](https://duckdb.org/docs/extensions/tpch.html) to generate everything in chunks. Let's start with a ~100GB database.
 
-import datetime
+import json
 import duckdb
 import pandas as pd
-import time
 import itertools
 from tqdm.auto import tqdm
 
-
-# In[2]:
-
-
-con = duckdb.connect(database="/root/venv/tpch_sf100.db")
+con = duckdb.connect(database="tpch_sf100.db")
 
 # con.execute("INSTALL tpch; LOAD tpch")
 # for idx in tqdm(range(10)):
@@ -103,9 +94,10 @@ value_orders={}
 value_orders['orderdate']=list(pd.date_range(min_orderdate, max_orderdate, freq=orderdate_skipby).strftime("%Y-%m-%d"))
 value_orders['shipdate']=list(pd.date_range(min_shipdate, max_shipdate, freq=shipdate_skipby).strftime("%Y-%m-%d"))
 
-#print(table)
-table_initial = table.iloc[:, :-3]  # All columns except the last three
+print(value_orders)
 
+print(table)
+table_initial = table.iloc[:, :-3]  # All columns except the last three
 
 # Create a lookup dictionary for fast index lookups
 value_order_dict = {
@@ -123,12 +115,10 @@ def are_neighbors(row1, row2):
 # Find all pairs of neighbor rows
 neighbor_pairs = []
 
-
 # Compare each pair of rows
 for i, j in itertools.combinations(range(len(table_initial)), 2):
     if are_neighbors(table_initial.iloc[i], table_initial.iloc[j]):
         neighbor_pairs.append((i, j))
-
 
 table['mean_elapsed'] = 0
 for trial in range(NUM_TRIALS):
@@ -141,11 +131,9 @@ for i, (row1_idx, row2_idx) in enumerate(neighbor_pairs):
     value1 = table.loc[row1_idx, 'mean_elapsed']
     value2 = table.loc[row2_idx, 'mean_elapsed']
     deviation = max(value1 / value2, value2 / value1)
-    
     # Store the deviation value
     deviation_log.append([row1_idx, row2_idx, deviation])
-    
-print(deviation_log)
+
 
 
 qt_orderdate = """
@@ -171,9 +159,19 @@ for orderdate in tqdm(value_orders['orderdate'], ncols=80):
 
 for shipdate in tqdm(value_orders['shipdate'], leave=False, ncols=80):
     sel_shipdate[shipdate] = con.sql(qt_shipdate, params={"shipdate": shipdate}).fetchone()[0]
-    
+
 orders_card = con.sql("SELECT count(*) FROM orders").fetchone()[0]
 lineitem_card = con.sql("SELECT count(*) FROM lineitem").fetchone()[0]
 
-print('sel_shipdate:', {x: y/lineitem_card for x,y in sel_shipdate.items()})
-print('sel_orderdate', {x: y/orders_card for x,y in sel_orderdate.items()})
+sel_shipdate = {x: y/lineitem_card for x,y in sel_shipdate.items()}
+sel_orderdate = {x: y/orders_card for x,y in sel_orderdate.items()}
+
+results = {
+    'sel_shipdate': sel_shipdate,
+    'sel_orderdate': sel_orderdate,
+    'deviation_log': deviation_log
+}
+
+with open('result.json', 'w') as fp:
+    json.dump(results, fp, indent=4)
+
